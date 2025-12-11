@@ -21,18 +21,18 @@
     h1{margin:0 0 8px;font-size:20px}
     p.lead{margin:0 0 18px;color:#9fb0d6}
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-    .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6);}
+    .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6);}    
     .word-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
-    .word{background:#07142a;border-radius:8px;padding:10px;text-align:center;cursor:pointer;user-select:none;border:1px solid rgba(255,255,255,0.03);transition:transform .06s ease,box-shadow .06s;}
-    .word.selected{outline:3px solid rgba(100,116,139,0.12);transform:translateY(-3px);box-shadow:0 6px 14px rgba(2,6,23,0.5)}
+    .word{background:#07142a;border-radius:8px;padding:10px;text-align:center;cursor:pointer;user-select:none;border:1px solid rgba(255,255,255,0.03);transition:transform .06s ease,box-shadow .06s,color .06s,background .06s;}
+    /* Selected tiles are white to make current choices clearer */
+    .word.selected{background:#ffffff;color:#07142a;outline:3px solid rgba(100,116,139,0.12);transform:translateY(-3px);box-shadow:0 6px 14px rgba(2,6,23,0.5)}
     .word.locked{opacity:0.45;cursor:default}
     .controls{display:flex;gap:8px;align-items:center;margin-top:12px}
     button{background:var(--accent);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer}
-    button.secondary{background:#0b1724;border:1px solid rgba(255,255,255,0.06)}
+    button.secondary{background:#0b1220;border:1px solid rgba(255,255,255,0.06)}
     .status{margin-top:12px;color:#cbe3ff}
     .category-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    .category-pill{padding:8px 10px;border-radius:999px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);font-size:13px}
-    .found{opacity:0.6;text-decoration:line-through}
+    .category-pill{padding:8px 10px;border-radius:999px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);font-size:13px;color:var(--text)}
     .legend{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
     .legend .sw{width:22px;height:22px;border-radius:6px;display:inline-block}
     .footer{margin-top:18px;color:#9fb0d6;font-size:13px}
@@ -54,6 +54,12 @@
       <button id="revealBtn" class="secondary">REVEAL SOLUTIONS</button>
     </div>
     <div class="status" id="status">SELECT 4 WORDS TO MAKE A GROUP.</div>
+  </div>
+
+  <!-- Only show categories after they've been correctly guessed (or after reveal) -->
+  <div class="card" style="grid-column:span 4; margin-top:14px;">
+    <strong>CATEGORIES CORRECTLY GUESSED</strong>
+    <div id="guessedCategories" class="category-list">(none yet)</div>
   </div>
 </div>
 
@@ -101,7 +107,9 @@ let locked = new Set();
 let foundCategories = [false,false,false,false];
 const board = document.getElementById('board');
 const status = document.getElementById('status');
-const categoriesDiv = document.getElementById('categories');
+const guessedDiv = document.getElementById('guessedCategories');
+const clearBtn = document.getElementById('clearBtn');
+const revealBtn = document.getElementById('revealBtn');
 
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a}
 
@@ -116,13 +124,26 @@ function renderBoard(){board.innerHTML='';
   });
 }
 
-function renderCategories(){categoriesDiv.innerHTML='';
-  CATEGORY_TITLES.forEach((t,i)=>{
-    const pill = document.createElement('div'); pill.className='category-pill';
-    if(foundCategories[i]) pill.classList.add('found');
-    pill.textContent = (i+1)+'. '+t + (foundCategories[i] ? ' ✓' : '');
-    categoriesDiv.appendChild(pill);
+/**
+ * renderGuessedCategories(showAll)
+ * - showAll = true: show all category titles (used by Reveal Solutions)
+ * - showAll = false: show only those categories marked foundCategories[i] === true
+ * Categories are displayed plainly (no strikethrough).
+ */
+function renderGuessedCategories(showAll = false){
+  if(!guessedDiv) return;
+  guessedDiv.innerHTML='';
+  let any=false;
+  CATEGORY_TITLES.forEach((title,i)=>{
+    if(showAll || foundCategories[i]){
+      any = true;
+      const pill = document.createElement('div');
+      pill.className = 'category-pill';
+      pill.textContent = (i+1)+'. '+title;
+      guessedDiv.appendChild(pill);
+    }
   });
+  if(!any) guessedDiv.textContent='(none yet)';
 }
 
 function toggleSelect(word,el){ if(locked.has(word)) return;
@@ -132,13 +153,16 @@ function toggleSelect(word,el){ if(locked.has(word)) return;
 
 function updateStatus(){status.textContent = 'Selected: '+Array.from(selected).join(', ')+ ' ('+selected.size+'/4)'; }
 
+/**
+ * submitGuess: check guess; if correct, lock tiles, mark category found, show category briefly,
+ * and add category to guessed list. If incorrect, flash wrong.
+ */
 function submitGuess(){ if(selected.size!==4){ alert('Select exactly 4 words before submitting'); return }
   const guess = Array.from(selected);
   // check which solution it matches
   let matchedIndex = -1;
   SOLUTIONS.forEach((sol,i)=>{ const sortedSol = sol.slice().sort(); const sortedGuess = guess.slice().sort(); if(JSON.stringify(sortedSol)===JSON.stringify(sortedGuess)) matchedIndex = i; });
   if(matchedIndex===-1){ // wrong
-    // briefly flash wrong then clear
     status.textContent = 'Incorrect — try again';
     Array.from(document.querySelectorAll('.word.selected')).forEach(el=>{ el.classList.add('wrong'); setTimeout(()=>el.classList.remove('wrong'),700); });
     setTimeout(()=>{ clearSelection(); },800);
@@ -147,42 +171,133 @@ function submitGuess(){ if(selected.size!==4){ alert('Select exactly 4 words bef
   // correct: lock these words and mark category found
   guess.forEach(w=>locked.add(w));
   foundCategories[matchedIndex]=true;
-  // colour the locked words according to which category
+  // colour the locked words according to which category and remove selected style
   const colour = matchedIndex===0?getComputedStyle(document.documentElement).getPropertyValue('--correct1'):
                  matchedIndex===1?getComputedStyle(document.documentElement).getPropertyValue('--correct2'):
                  matchedIndex===2?getComputedStyle(document.documentElement).getPropertyValue('--correct3'):
                  getComputedStyle(document.documentElement).getPropertyValue('--correct4');
   Array.from(document.querySelectorAll('.word')).forEach(el=>{
     if(guess.includes(el.dataset.word)){
-      el.style.background = colour; el.classList.remove('selected'); el.classList.add('locked');
+      el.style.background = colour;
+      el.style.color = '';
+      el.classList.remove('selected');
+      el.classList.add('locked');
     }
   });
-  selected.clear(); renderCategories(); updateStatus();
-  // check win
-  if(foundCategories.every(x=>x)) status.textContent = 'All categories found — nice!';
+
+  // clear selection, update guessed categories and status
+  selected.clear(); renderGuessedCategories(false); updateStatus();
+
+  // reveal the category title to the player temporarily
+  status.textContent = 'Correct — ' + CATEGORY_TITLES[matchedIndex];
+
+  // if all categories found, change clear button to be a reset and keep reveal button also as reset-capable
+  if(foundCategories.every(x=>x)){
+    status.textContent = 'All categories found — nice!';
+    clearBtn.textContent = 'RESET GAME';
+    // set reveal button to allow reset as well (so reveal also provides option to reset)
+    revealBtn.textContent = 'REVEAL SOLUTIONS';
+    // we don't change reveal handler here because reveal already reveals; enabling reset is handled elsewhere
+  }
+
+  // after a short delay, return the status to the normal selection line unless the game is won
+  setTimeout(()=>{
+    if(foundCategories.every(x=>x)){
+      status.textContent = 'All categories found — nice!';
+    } else {
+      updateStatus();
+    }
+  }, 3000);
 }
 
-function clearSelection(){ selected.clear(); Array.from(document.querySelectorAll('.word')).forEach(el=>el.classList.remove('selected')); updateStatus(); }
-
-function revealSolutions(){ // reveal by colouring each solution group
+/**
+ * revealSolutions: reveal by colouring each solution group.
+ * After revealing, also show the names of the categories (renderGuessedCategories(showAll=true))
+ * and switch the reveal button into a "reveal+reset" state: its text becomes "REVEAL & RESET"
+ * and clicking it after revealing will reset the game.
+ */
+function revealSolutions(){ 
+  // colour every solution group
   SOLUTIONS.forEach((sol,i)=>{
     const colour = i===0?getComputedStyle(document.documentElement).getPropertyValue('--correct1'):
                   i===1?getComputedStyle(document.documentElement).getPropertyValue('--correct2'):
                   i===2?getComputedStyle(document.documentElement).getPropertyValue('--correct3'):
                   getComputedStyle(document.documentElement).getPropertyValue('--correct4');
     Array.from(document.querySelectorAll('.word')).forEach(el=>{
-      if(sol.includes(el.dataset.word)) el.style.background=colour;
+      if(sol.includes(el.dataset.word)){
+        el.style.background = colour;
+        el.style.color = '';
+      }
     });
   });
+
+  // show all category titles in the guessed area (since solutions are revealed)
+  renderGuessedCategories(true);
+
+  // change reveal button text to indicate reset is available
+  revealBtn.textContent = 'REVEAL & RESET';
+
+  // change reveal button click behavior: clicking it now resets the game
+  // (we replace the handler here so subsequent clicks reset)
+  revealBtn.onclick = resetGame;
 }
 
-// buttons
+/**
+ * clearSelection: if the game is complete, clear behaves as reset; otherwise it just clears the current selection.
+ */
+function clearSelection(){ 
+  // if game complete, clear button resets the game
+  if(foundCategories.every(x=>x)){
+    resetGame();
+    return;
+  }
+  selected.clear(); Array.from(document.querySelectorAll('.word')).forEach(el=>el.classList.remove('selected')); updateStatus(); 
+}
+
+/**
+ * resetGame: fully reset runtime state and UI
+ */
+function resetGame(){
+  // reset runtime state
+  selected.clear();
+  locked.clear();
+  foundCategories = foundCategories.map(()=>false);
+
+  // remove inline styles and classes from tiles, then re-render board (shuffled)
+  Array.from(document.querySelectorAll('.word')).forEach(el=>{
+    el.classList.remove('locked','selected','wrong');
+    el.style.background = '';
+    el.style.color = '';
+  });
+
+  // re-render board (recreates tiles/shuffles)
+  renderBoard();
+
+  // clear guessed categories (none shown until guessed)
+  renderGuessedCategories(false);
+
+  // restore clear/reveal button labels and handlers
+  clearBtn.textContent = 'CLEAR SELECTION';
+  revealBtn.textContent = 'REVEAL SOLUTIONS';
+  // reset reveal button handler to the original function
+  revealBtn.onclick = revealSolutions;
+
+  // restore status
+  status.textContent = 'SELECT 4 WORDS TO MAKE A GROUP.';
+  updateStatus();
+}
+
+// buttons: attach handlers (use addEventListener for submit and clear; reveal handled via onclick to allow replacement)
 document.getElementById('submitBtn').addEventListener('click',submitGuess);
-document.getElementById('clearBtn').addEventListener('click',clearSelection);
-document.getElementById('revealBtn').addEventListener('click',revealSolutions);
+clearBtn.addEventListener('click',clearSelection);
+revealBtn.addEventListener('click',()=>{
+  // If reveal button is already in "REVEAL & RESET" state, its onclick was changed to resetGame above.
+  // So this handler will only run before revealBtn was switched to reset behavior.
+  revealSolutions();
+});
 
 // init
-renderBoard(); renderCategories(); updateStatus();
+renderBoard(); renderGuessedCategories(false); updateStatus();
 </script>
 </body>
 </html>
