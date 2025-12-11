@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GOBLIN 4 CONNECTIONS</title>
+  <style>
+    :root{
+      --bg:#0f1724;
+      --card:#0b1220;
+      --accent:#2563eb;
+      --correct1:#16a34a;
+      --correct2:#d97706;
+      --correct3:#db2777;
+      --correct4:#7c3aed;
+      --wrong:#ef4444;
+      --text:#e6eef8;
+    }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#071026 0%,#081426 60%);color:var(--text)}
+    .container{max-width:980px;margin:28px auto;padding:20px}
+    h1{margin:0 0 8px;font-size:20px}
+    p.lead{margin:0 0 18px;color:#9fb0d6}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+    .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6);}
+    .word-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+    .word{background:#07142a;border-radius:8px;padding:10px;text-align:center;cursor:pointer;user-select:none;border:1px solid rgba(255,255,255,0.03);transition:transform .06s ease,box-shadow .06s;}
+    .word.selected{outline:3px solid rgba(100,116,139,0.12);transform:translateY(-3px);box-shadow:0 6px 14px rgba(2,6,23,0.5)}
+    .word.locked{opacity:0.45;cursor:default}
+    .controls{display:flex;gap:8px;align-items:center;margin-top:12px}
+    button{background:var(--accent);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.secondary{background:#0b1724;border:1px solid rgba(255,255,255,0.06)}
+    .status{margin-top:12px;color:#cbe3ff}
+    .category-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .category-pill{padding:8px 10px;border-radius:999px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);font-size:13px}
+    .found{opacity:0.6;text-decoration:line-through}
+    .legend{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+    .legend .sw{width:22px;height:22px;border-radius:6px;display:inline-block}
+    .footer{margin-top:18px;color:#9fb0d6;font-size:13px}
+    @media (max-width:700px){.grid{grid-template-columns:1fr} .word-grid{grid-template-columns:repeat(2,1fr)} }
+  </style>
+</head>
+<body style="text-transform:uppercase;">
+  <div class="container">
+    <h1>GOBLIN 4 CONNECTIONS</h1>
+    
+
+    <div class="grid">
+  <div class="card" style="grid-column:span 4">
+    <strong>GAME BOARD</strong>
+    <div id="board" class="word-grid" aria-live="polite"></div>
+    <div class="controls">
+      <button id="submitBtn">SUBMIT GUESS</button>
+      <button id="clearBtn" class="secondary">CLEAR SELECTION</button>
+      <button id="revealBtn" class="secondary">REVEAL SOLUTIONS</button>
+    </div>
+    <div class="status" id="status">SELECT 4 WORDS TO MAKE A GROUP.</div>
+  </div>
+</div>
+
+      
+    </div>
+
+  </div>
+
+<script>
+// ---- Data (editable) ----
+let CATEGORY_TITLES = [
+  "THINGS SOMEONE HAS PUT IN THEIR MOUTH",
+  "THINGS THAT EACH REPRESENT SOMEONE IN THE GROUP",
+  "THINGS SOMEONE IN THE GROUP HATES",
+  "THINGS THAT HAVE A DOUBLE MEANING TO US"
+];
+let WORDS = [
+  "A vape",
+  "cock",
+  "Seitan",
+  "Controlled substances",
+  "GLASSES WIPES",
+  "JELLY",
+  "HOCKEY",
+  "HAVING CHILDHOOD TRAUMA",
+  "PETTY ARGUMENTS",
+  "CARA",
+  "MEN",
+  "MAX VERSTAPPEN",
+  "CBT",
+  "HARRY STYLES",
+  "SWEDISH PEOPLE",
+  "TEA"
+];
+let SOLUTIONS = [
+  ["A vape","cock","Seitan","Controlled substances"],
+  ["GLASSES WIPES","JELLY","HOCKEY","HAVING CHILDHOOD TRAUMA"],
+  ["PETTY ARGUMENTS","CARA","MEN","MAX VERSTAPPEN"],
+  ["CBT","HARRY STYLES","SWEDISH PEOPLE","TEA"]
+];
+
+// ---- Runtime state ----
+let selected = new Set();
+let locked = new Set();
+let foundCategories = [false,false,false,false];
+const board = document.getElementById('board');
+const status = document.getElementById('status');
+const categoriesDiv = document.getElementById('categories');
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a}
+
+function renderBoard(){board.innerHTML='';
+  const shuffled = shuffle(WORDS.slice());
+  shuffled.forEach(w=>{
+    const el = document.createElement('div');
+    el.className='word'; el.textContent=w; el.dataset.word=w;
+    if(locked.has(w)) el.classList.add('locked');
+    el.addEventListener('click',()=>toggleSelect(w,el));
+    board.appendChild(el);
+  });
+}
+
+function renderCategories(){categoriesDiv.innerHTML='';
+  CATEGORY_TITLES.forEach((t,i)=>{
+    const pill = document.createElement('div'); pill.className='category-pill';
+    if(foundCategories[i]) pill.classList.add('found');
+    pill.textContent = (i+1)+'. '+t + (foundCategories[i] ? ' ✓' : '');
+    categoriesDiv.appendChild(pill);
+  });
+}
+
+function toggleSelect(word,el){ if(locked.has(word)) return;
+  if(selected.has(word)){ selected.delete(word); el.classList.remove('selected'); }
+  else{ if(selected.size>=4) return; selected.add(word); el.classList.add('selected'); }
+  updateStatus(); }
+
+function updateStatus(){status.textContent = 'Selected: '+Array.from(selected).join(', ')+ ' ('+selected.size+'/4)'; }
+
+function submitGuess(){ if(selected.size!==4){ alert('Select exactly 4 words before submitting'); return }
+  const guess = Array.from(selected);
+  // check which solution it matches
+  let matchedIndex = -1;
+  SOLUTIONS.forEach((sol,i)=>{ const sortedSol = sol.slice().sort(); const sortedGuess = guess.slice().sort(); if(JSON.stringify(sortedSol)===JSON.stringify(sortedGuess)) matchedIndex = i; });
+  if(matchedIndex===-1){ // wrong
+    // briefly flash wrong then clear
+    status.textContent = 'Incorrect — try again';
+    Array.from(document.querySelectorAll('.word.selected')).forEach(el=>{ el.classList.add('wrong'); setTimeout(()=>el.classList.remove('wrong'),700); });
+    setTimeout(()=>{ clearSelection(); },800);
+    return;
+  }
+  // correct: lock these words and mark category found
+  guess.forEach(w=>locked.add(w));
+  foundCategories[matchedIndex]=true;
+  // colour the locked words according to which category
+  const colour = matchedIndex===0?getComputedStyle(document.documentElement).getPropertyValue('--correct1'):
+                 matchedIndex===1?getComputedStyle(document.documentElement).getPropertyValue('--correct2'):
+                 matchedIndex===2?getComputedStyle(document.documentElement).getPropertyValue('--correct3'):
+                 getComputedStyle(document.documentElement).getPropertyValue('--correct4');
+  Array.from(document.querySelectorAll('.word')).forEach(el=>{
+    if(guess.includes(el.dataset.word)){
+      el.style.background = colour; el.classList.remove('selected'); el.classList.add('locked');
+    }
+  });
+  selected.clear(); renderCategories(); updateStatus();
+  // check win
+  if(foundCategories.every(x=>x)) status.textContent = 'All categories found — nice!';
+}
+
+function clearSelection(){ selected.clear(); Array.from(document.querySelectorAll('.word')).forEach(el=>el.classList.remove('selected')); updateStatus(); }
+
+function revealSolutions(){ // reveal by colouring each solution group
+  SOLUTIONS.forEach((sol,i)=>{
+    const colour = i===0?getComputedStyle(document.documentElement).getPropertyValue('--correct1'):
+                  i===1?getComputedStyle(document.documentElement).getPropertyValue('--correct2'):
+                  i===2?getComputedStyle(document.documentElement).getPropertyValue('--correct3'):
+                  getComputedStyle(document.documentElement).getPropertyValue('--correct4');
+    Array.from(document.querySelectorAll('.word')).forEach(el=>{
+      if(sol.includes(el.dataset.word)) el.style.background=colour;
+    });
+  });
+}
+
+// buttons
+document.getElementById('submitBtn').addEventListener('click',submitGuess);
+document.getElementById('clearBtn').addEventListener('click',clearSelection);
+document.getElementById('revealBtn').addEventListener('click',revealSolutions);
+
+// init
+renderBoard(); renderCategories(); updateStatus();
+</script>
+</body>
+</html>
